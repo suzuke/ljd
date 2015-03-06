@@ -27,7 +27,7 @@ script and launch it as in ```main.py path/to/file.luac```
 
 IRC:
 ---
-#ljd at freenode
+```#ljd at freenode```
 
 TODO
 ---
