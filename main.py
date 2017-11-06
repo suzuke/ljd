@@ -23,17 +23,20 @@
 # SOFTWARE.
 #
 
+import csv
+import os
 import sys
+from time import time
 
-import ljd.rawdump.parser
-import ljd.pseudoasm.writer
 import ljd.ast.builder
-import ljd.ast.validator
 import ljd.ast.locals
+import ljd.ast.mutator
 import ljd.ast.slotworks
 import ljd.ast.unwarper
-import ljd.ast.mutator
+import ljd.ast.validator
 import ljd.lua.writer
+import ljd.pseudoasm.writer
+import ljd.rawdump.parser
 
 
 def dump(name, obj, level=0):
@@ -71,10 +74,9 @@ def dump(name, obj, level=0):
             dump(key, val, level + 1)
 
 
-def main():
-    file_in = sys.argv[1]
+def decompile_lua(fin):
 
-    header, prototype = ljd.rawdump.parser.parse(file_in)
+    header, prototype = ljd.rawdump.parser.parse(fin)
 
     if not prototype:
         return 1
@@ -113,12 +115,77 @@ def main():
             ljd.ast.mutator.primary_pass(ast)
 
             ljd.ast.validator.validate(ast, warped=False)
+    return ast
 
-    ljd.lua.writer.write(sys.stdout, ast)
 
-    return 0
+def batch_log(row):
+    with open('log.csv', mode='a', encoding='utf-8', newline='\n') as csvout:
+        csv_writer = csv.writer(csvout)
+        csv_writer.writerow(row)
+
+
+def batch_folder(folder):
+    # Non recursive batch
+    files_decompiled = 0
+    files_failed = 0
+    script_start = time()
+    files = os.listdir(folder)
+    with open('log.csv', mode='w') as fout:
+        pass
+    batch_log(['file', 'status', 'time_elapsed', 'fail_reason'])
+    print(files)
+    for file in files:
+        print('decompiling ' + file)
+        if os.path.isdir(folder + '\\' + file):
+            continue
+
+        start_time = time()
+
+        try:
+            ast = decompile_lua(folder + '\\' + file)
+            os.makedirs(folder + '\\decompiled_lua', exist_ok=True)
+
+            with open(folder + '\\decompiled_lua\\' + file + '.lua',
+                      mode='w', encoding='utf-8') as fout:
+                ljd.lua.writer.write(fout, ast)
+
+            time_elapsed = time() - start_time
+            print('decompiled in {} seconds'.format(time_elapsed))
+            batch_log([file, 'passed', time_elapsed, ])
+            files_decompiled += 1
+
+        except Exception as exp:
+            time_elapsed = time() - start_time
+            print('failed to decompiled ' + file + '\nreason: ' + str(exp))
+            batch_log([file, 'failed', time_elapsed, exp])
+            files_failed += 1
+
+    print('total files: {}\nfiles decomplied: {}\nfiles failed: {}\n\
+time elapsed: {}'.format(files_decompiled + files_failed, files_decompiled,
+                         files_failed, time() - script_start))
+
+
+def single_file(ast):
+    with open(sys.argv[1] + '_decompile.lua',
+              mode='w', encoding='utf-8') as fout:
+        ljd.lua.writer.write(fout, ast)
+
+
+def print_header_info(fin):
+    header, prototype = ljd.rawdump.parser.parse(fin)
+    print('\
+version: {}\n\
+origin: {}\n\
+name: {}\n\
+bigendian: {}\n\
+hasffi: {}\n\
+isstripped: {}\n'.format(header.version, header.origin, header.name, header.flags.is_big_endian, header.flags.has_ffi, header.flags.is_stripped))
 
 
 if __name__ == "__main__":
-    retval = main()
-    sys.exit(retval)
+    file_in = sys.argv[1]
+    batch_folder(file_in)
+    # single_file(decompile_lua(file_in))
+    # print_header_info(file_in)
+    
+    sys.exit()
